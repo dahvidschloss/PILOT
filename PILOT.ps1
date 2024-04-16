@@ -1,6 +1,8 @@
-﻿# Author: Dahvid Schloss a.k.a APT Big Daddy
+# Author: Dahvid Schloss a.k.a APT Big Daddy
 # Email: dahvid.schloss@echeloncyber.com
 # Date: 04-03-2024
+# Update: 4-16-2024
+# Patch Notes: Added in a better way of exiting issues so it doesn't close the terminal. Also made it so the script will find the CWD and att it to the file path. 
 # Description: Designed for transmitting files over ICMP by breaking them into manageable chunks to emulate a windows default ping
 
 Add-Type -AssemblyName System.Net
@@ -14,7 +16,9 @@ function Read-FileInChunks {
 
     try {
         $Chunks = @()
-        $FileStream = [System.IO.File]::OpenRead($FilePath)
+        $CWD = $PSScriptRoot
+        $CWDfilePath = Join-Path -Path $CWD -ChildPath $FilePath
+        $FileStream = [System.IO.File]::OpenRead($CWDfilePath)
         $Buffer = New-Object byte[] $ChunkSize
         while ($FileStream.Read($Buffer, 0, $ChunkSize) -gt 0) {
             $Chunks += , $Buffer.Clone() # Clone buffer to avoid overwriting
@@ -24,11 +28,11 @@ function Read-FileInChunks {
     }
     catch [System.IO.FileNotFoundException] {
         Write-Host "Error: File '$FilePath' not found."
-        exit 1
+        return
     }
     catch {
         Write-Host "Error reading file: $_"
-        exit 1
+        return
     }
 }
 
@@ -43,7 +47,8 @@ Function Run-Pilot{
     )
 
     # Read file in chunks
-    $chunks = Read-FileInChunks -FilePath $filePath -ChunkSize $chunksize
+    try{$chunks = Read-FileInChunks -FilePath $filePath -ChunkSize $chunksize}
+    Catch{return}
 
     #count the CHUNKS
     $totalChunks = $chunks.Count
