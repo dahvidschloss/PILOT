@@ -81,4 +81,4 @@ Be aware of network monitoring tools that may detect unusual ICMP traffic.
 
 ## Final Notes
 
-P.I.L.O.T represents a novel approach to data transfer, showcasing the flexibility of network protocols for beyond-standard uses. Whether for penetration testing, secure file transfer in restricted environments, or research, P.I.L.O.T offers a unique tool in the cybersecurity toolkit.
+P.I.L.O.T represents an offensive security approach to data transfer, showcasing the flexibility of network protocols for beyond-standard uses. Whether for penetration testing or research, P.I.L.O.T offers a unique tool in the cybersecurity toolkit.
